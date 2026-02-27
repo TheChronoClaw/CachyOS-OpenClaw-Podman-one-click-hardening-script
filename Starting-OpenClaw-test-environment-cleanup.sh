@@ -1,31 +1,43 @@
 #!/bin/bash
-echo "🗑️ Starting OpenClaw test environment cleanup..."
+# ==============================================================================
+# OpenClaw Test Environment Cleanup Script
+# Version:      1.0.0
+# Author:       TheChronoClaw
+# GitHub:       https://github.com/TheChronoClaw
+# Description:  Safely stop & remove OpenClaw containers, images, and configs
+# Compatibility:CachyOS + Podman rootless
+# ==============================================================================
 
-# 1. Stop and remove services
-if id openclaw &>/dev/null; then
-  USER_UID=$(id -u openclaw)
-  sudo -u openclaw XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user stop openclaw.service 2>/dev/null || true
-  sudo -u openclaw XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user disable openclaw.service 2>/dev/null || true
-  sudo loginctl disable-linger openclaw
-fi
+set -euo pipefail
 
-# 2. Delete the user and their home directory
-sudo userdel -r openclaw 2>/dev/null || true
+# Display header
+echo -e "\n============================================================="
+echo " OpenClaw Test Environment Cleanup Script"
+echo " Version: 1.0.0 | Author: TheChronoClaw"
+echo -e "=============================================================\n"
 
-# 3. Delete BTRFS subvolume (if it exists)
-if mount | grep -q " /home .*btrfs"; then
-  sudo btrfs subvolume delete /home/openclaw/.openclaw 2>/dev/null || true
-  # Note: If the user has already been deleted, the path may not exist; ignore errors
-fi
+# Step 1: Stop OpenClaw container if running
+echo "[1/5] Stopping OpenClaw container..."
+podman stop openclaw >/dev/null 2>&1 || true
 
-# 4. Delete snapshot directories
-sudo rm -rf /snapshots/openclaw-* 2>/dev/null || true
+# Step 2: Remove OpenClaw container
+echo "[2/5] Removing OpenClaw container..."
+podman rm -f openclaw >/dev/null 2>&1 || true
 
-# 5. Remove Cron jobs
-sudo rm -f /etc/cron.d/openclaw-btrfs
+# Step 3: Remove all OpenClaw images
+echo "[3/5] Removing OpenClaw images..."
+podman images | grep -i openclaw | awk '{print $3}' | xargs -r podman rmi -f >/dev/null 2>&1 || true
 
-# 6. Remove scripts
-rm -f ~/openclaw-cachyos-secure-podman.sh
-rm -f ~/openclaw_install.log
+# Step 4: Safely delete config directories
+echo "[4/5] Cleaning up config directories..."
+[ -d ~/.config/openclaw ] && rm -rf ~/.config/openclaw
+[ -d ./config ]         && rm -rf ./config
+[ -d ./openclaw ]       && rm -rf ./openclaw
 
-echo "✅ Cleanup complete. The system has been restored to its original state."
+# Step 5: Prune unused Podman data
+echo "[5/5] Pruning unused Podman data..."
+podman system prune -f >/dev/null 2>&1 || true
+
+# Done
+echo -e "\n✅ Cleanup completed successfully!"
+echo "All OpenClaw test environment resources have been removed.\n"
