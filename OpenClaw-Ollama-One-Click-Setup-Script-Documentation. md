@@ -1,0 +1,235 @@
+OpenClaw Ollama 一键部署脚本说明文档
+ 
+OpenClaw Ollama One-Click Setup Script Documentation
+ 
+适配系统 / Target System：CachyOS
+核心依赖 / Core Dependencies：Podman (无根模式/rootless)、NVIDIA GPU（推荐/Recommended）
+脚本版本 / Script Version：1.7 (Ultimate)
+作者 / Author：TheChronoClaw
+脚本功能 / Core Function：一键安装Ollama+GPU驱动适配+大模型拉取+OpenClaw本地配置生成，实现CachyOS环境下纯本地大模型部署，适配Podman无根安全运行模式。
+One-click installation of Ollama + GPU driver adaptation + LLM pulling + OpenClaw local config generation, enabling fully local LLM deployment on CachyOS, compatible with Podman rootless safe runtime mode.
+ 
+ 
+ 
+一、脚本核心特性 / Key Features
+ 
+1. 智能模型选择 / Smart Model Selection
+ 
+支持自定义拉取Ollama模型，默认选用 qwen2.5:7b ，可根据需求输入任意Ollama官方模型名。
+Supports custom LLM pulling for Ollama, default to  qwen2.5:7b , you can input any official Ollama model name as needed.
+ 
+2. VRAM智能检测与推荐 / VRAM Smart Detection & Recommendation
+ 
+自动识别NVIDIA GPU显存，根据显存大小给出适配模型建议，避免模型过大导致运行失败。
+Automatically detect NVIDIA GPU VRAM and provide suitable model recommendations based on VRAM capacity, preventing runtime failures caused by oversized models.
+ 
+3. 服务就绪智能等待 / Smart Service Readiness Wait
+ 
+检测Ollama API端口（11434）状态，最多等待15秒确保服务启动完成，避免后续操作因服务未就绪报错。
+Detect the status of Ollama API port (11434), wait up to 15 seconds to ensure service startup completion, avoiding errors in subsequent operations due to unready service.
+ 
+4. 配置文件防覆盖 / Config File Overwrite Protection
+ 
+生成OpenClaw本地配置文件时，若文件已存在会弹窗确认，防止误删原有配置。
+When generating the OpenClaw local config file, a confirmation prompt will pop up if the file already exists to prevent accidental deletion of original config.
+ 
+5. 全流程状态反馈 / Full-process Status Feedback
+ 
+通过彩色字符输出各步骤执行状态（成功/失败/提示），操作过程可视化，便于问题排查。
+Output the execution status (success/failure/prompt) of each step with colored characters, making the operation process visual and easy for troubleshooting.
+ 
+6. 预检查机制 / Preflight Check
+ 
+自动检测Podman及OpenClaw镜像是否存在，给出缺失时的快速解决命令。
+Automatically detect the existence of Podman and OpenClaw image, and provide quick solution commands if missing.
+ 
+ 
+ 
+二、脚本执行步骤 / Execution Steps
+ 
+1. 脚本获取 / Get the Script
+ 
+从GitHub仓库克隆脚本或直接下载：
+Clone the script from GitHub repository or download it directly:
+ 
+bash
+  
+git clone https://github.com/TheChronoClaw/CachyOS-OpenClaw-Podman-one-click-hardening-script.git
+cd CachyOS-OpenClaw-Podman-one-click-hardening-script
+chmod +x openclaw-ollama-setup.sh
+ 
+ 
+2. 运行脚本 / Run the Script
+ 
+必须使用sudo权限运行，脚本会自动识别实际操作用户并配置目录权限：
+Must run with sudo privileges, the script will automatically identify the actual operating user and configure directory permissions:
+ 
+bash
+  
+sudo ./openclaw-ollama-setup.sh
+ 
+ 
+3. 交互操作 / Interactive Operation
+ 
+仅需一步交互：输入需要拉取的Ollama模型名（直接回车使用默认 qwen2.5:7b ）。
+Only one interactive step: enter the Ollama model name to pull (press Enter directly to use the default  qwen2.5:7b ).
+ 
+4. 可选确认 / Optional Confirmation
+ 
+若本地已存在 openclaw-local-ollama.json 配置文件，脚本会询问是否覆盖，按需选择 y/N 即可。
+If the  openclaw-local-ollama.json  config file already exists locally, the script will ask whether to overwrite it, select  y/N  as needed.
+ 
+ 
+ 
+三、脚本执行流程 / Execution Flow
+ 
+脚本共分6个核心步骤，含2个可选步骤，全流程自动执行：
+The script has 6 core steps and 2 optional steps, all executed automatically:
+ 
+1. 依赖安装：检查并安装curl，通过官方脚本安装Ollama（若未安装）
+Dependencies Installation: Check and install curl, install Ollama via official script (if not installed)
+2. 服务启用：启动并设置Ollama systemd服务开机自启
+Service Enable: Start and set Ollama systemd service to start on boot
+3. 服务检测：循环检测11434端口，确认Ollama API就绪
+Service Detection: Cyclically detect port 11434 to confirm Ollama API readiness
+4. GPU/显存检测：识别NVIDIA GPU，检测显存并给出模型推荐
+GPU/VRAM Detection: Identify NVIDIA GPU, detect VRAM and provide model recommendations
+5. 模型拉取：拉取指定主模型+可选拉取 nomic-embed-text 嵌入模型
+Model Pulling: Pull the specified main model + optionally pull the  nomic-embed-text  embedding model
+6. 配置生成：生成OpenClaw本地配置文件，设置正确的文件属主
+Config Generation: Generate OpenClaw local config file and set the correct file owner
+7. 预检查（可选）：检测Podman及OpenClaw镜像状态
+Preflight Check (Optional): Detect Podman and OpenClaw image status
+8. 总结输出（可选）：打印快速操作命令和Podman启动指令
+Summary Output (Optional): Print quick operation commands and Podman startup instructions
+ 
+ 
+ 
+四、显存模型推荐表 / VRAM Model Recommendation Table
+ 
+仅针对NVIDIA GPU，脚本会自动检测并给出提示，手动参考如下：
+Only for NVIDIA GPU, the script will automatically detect and give prompts, manual reference as follows:
+ 
+显存大小 / VRAM Capacity 推荐模型 / Recommended Model 备注 / Remarks 
+<6000 MiB qwen2.5:3b 或更小 / or smaller 低显存，仅支持轻量模型 / Low VRAM, only support lightweight models 
+6000~9999 MiB qwen2.5:7b 中等显存，适配主流轻量模型 / Medium VRAM, compatible with mainstream lightweight models 
+10000~19999 MiB qwen2.5:14b / llama3.2:11b 高显存，支持中大型模型 / High VRAM, support medium and large models 
+≥20000 MiB qwen2.5:32b 或更大 / or larger 超高显存，支持大型模型 / Ultra-high VRAM, support large models 
+ 
+无NVIDIA GPU：脚本会自动切换至CPU推理模式，建议选用3b及以下轻量模型，推理速度会变慢。
+No NVIDIA GPU: The script will automatically switch to CPU inference mode, it is recommended to use lightweight models of 3b and below, and the inference speed will be slower.
+ 
+ 
+ 
+五、关键文件与路径 / Key Files & Paths
+ 
+1. 配置文件 / Config File： ~/{实际用户}/openclaw-local-ollama.json 
+存储Ollama连接信息、模型配置、嵌入模型配置，供Podman容器内OpenClaw调用。
+Store Ollama connection info, model config and embedding model config for OpenClaw call in Podman container.
+2. 脚本文件 / Script File： openclaw-ollama-setup.sh 
+主执行脚本，赋予可执行权限后即可运行。
+Main execution script, can be run after granting executable permissions.
+ 
+ 
+ 
+六、常用操作命令 / Common Operation Commands
+ 
+Ollama 基础操作 / Basic Ollama Operations
+ 
+bash
+  
+# 查看运行中的模型 / List running models
+ollama ps
+# 启动模型交互聊天 / Start model interactive chat
+ollama run [你的模型名/your model name]
+# 拉取新模型 / Pull a new model
+ollama pull [模型名/model name]
+# 查看Ollama服务状态 / Check Ollama service status
+systemctl status ollama
+# 重启Ollama服务 / Restart Ollama service
+systemctl restart ollama
+ 
+ 
+Podman 启动OpenClaw / Start OpenClaw with Podman
+ 
+脚本最终会输出一键启动命令，核心命令如下（自动适配实际用户目录）：
+The script will finally output a one-click startup command, the core command is as follows (automatically adapt to the actual user directory):
+ 
+bash
+  
+podman run -d --name openclaw \
+ --network=host \
+ -v [实际用户目录/real user dir]/openclaw-local-ollama.json:/app/config.json \
+ your-openclaw-image
+ 
+ 
+Podman 基础操作 / Basic Podman Operations
+ 
+bash
+  
+# 构建OpenClaw镜像（若缺失） / Build OpenClaw image (if missing)
+podman build -t your-openclaw-image .
+# 查看运行中的容器 / List running containers
+podman ps
+# 停止OpenClaw容器 / Stop OpenClaw container
+podman stop openclaw
+# 启动已停止的OpenClaw容器 / Start the stopped OpenClaw container
+podman start openclaw
+ 
+ 
+ 
+ 
+七、问题排查 / Troubleshooting
+ 
+1. 脚本运行权限错误 / Script Run Permission Error
+ 
+报错： Permission denied 
+解决：赋予脚本可执行权限： chmod +x openclaw-ollama-setup.sh 
+ 
+2. Ollama服务启动失败 / Ollama Service Startup Failure
+ 
+解决：查看服务日志排查原因： systemctl status ollama.service  或  journalctl -u ollama.service 
+ 
+3. 模型拉取失败 / Model Pull Failure
+ 
+原因：网络问题、GPU驱动未安装、模型名错误
+Reasons：Network issues, NVIDIA GPU driver not installed, wrong model name
+解决：
+ 
+1. 检查网络连接，确保能访问Ollama官方仓库
+Check network connection to ensure access to Ollama official repository
+2. 验证NVIDIA驱动： nvidia-smi （无输出则需安装驱动）
+Verify NVIDIA driver:  nvidia-smi  (install driver if no output)
+3. 确认模型名为Ollama官方支持名称：https://ollama.com/library
+Confirm the model name is officially supported by Ollama: https://ollama.com/library
+ 
+4. Podman镜像缺失 / Podman Image Missing
+ 
+报错： your-openclaw-image  未找到 / not found
+解决：在OpenClaw项目根目录执行构建命令： podman build -t your-openclaw-image . 
+ 
+5. 配置文件生成失败 / Config File Generation Failure
+ 
+解决：检查目录权限，脚本会自动将配置文件属主设为实际操作用户，也可手动设置：
+ chown [用户名/USER]:[用户组/GROUP] ~/openclaw-local-ollama.json 
+ 
+ 
+ 
+八、注意事项 / Notes
+ 
+1. 脚本仅适配CachyOS，其他Arch系发行版可尝试运行，非Arch系不兼容。
+The script is only compatible with CachyOS, other Arch-based distributions can try to run it, non-Arch-based distributions are not compatible.
+2. 必须使用sudo权限运行脚本，否则无法完成Ollama安装和服务配置。
+Must run the script with sudo privileges, otherwise Ollama installation and service configuration cannot be completed.
+3. Podman建议使用无根模式/rootless，符合脚本的安全设计理念。
+It is recommended to use Podman in rootless mode, which is in line with the security design concept of the script.
+4. 若需更换模型，可重新运行脚本或手动修改 openclaw-local-ollama.json 配置文件后重启Podman容器。
+If you need to replace the model, you can re-run the script or manually modify the  openclaw-local-ollama.json  config file and then restart the Podman container.
+5. 纯CPU模式下推理速度较慢，建议优先配置NVIDIA GPU并安装官方驱动。
+The inference speed is slow in pure CPU mode, it is recommended to configure NVIDIA GPU and install the official driver first.
+6. 嵌入模型 nomic-embed-text 为可选拉取项，失败不影响主模型使用，仅缺失嵌入相关功能。
+The embedding model  nomic-embed-text  is an optional pull item, failure does not affect the use of the main model, only the embedding-related functions are missing.
+ 
+ 
+ 
+仓库地址 / Repository Address：https://github.com/TheChronoClaw/CachyOS-OpenClaw-Podman-one-click-hardening-script
