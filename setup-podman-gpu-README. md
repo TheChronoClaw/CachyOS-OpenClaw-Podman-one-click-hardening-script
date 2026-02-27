@@ -1,0 +1,18 @@
+# Podman + GPU Acceleration One-Click Setup
+Automated setup for rootless Podman with GPU acceleration on **Arch Linux / CachyOS**  
+Supports NVIDIA, AMD, and Intel GPUs.
+
+## Features
+- Installs and configures rootless Podman
+- Automatic GPU detection (NVIDIA / AMD / Intel)
+- Persistent udev rules for GPU permissions
+- Proper subuid / subgid mapping
+- NVIDIA Container Toolkit integration
+- Enables linger for user-level systemd services
+
+## Usage
+```bash
+git clone https://github.com/TheChronoClaw/CachyOS-OpenClaw-Podman-one-click-hardening-script.git
+cd CachyOS-OpenClaw-Podman-one-click-hardening-script
+chmod +x setup-podman-gpu.sh
+sudo ./setup-podman-gpu.sh
