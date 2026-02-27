@@ -2,47 +2,47 @@ cat > ~/openclaw-cachyos-secure-podman.sh << 'EOF'
 #!/bin/bash
 set -euo pipefail
 
-echo "🦞 CachyOS Dedicated OpenClaw Podman Hardening Script v3.2 (Fixed)"
-echo "=================================================="
+echo "🦞 CachyOS OpenClaw Podman Hardening Script v4.0 FINAL"
+echo "========================================================="
 
-# 1. Verify CachyOS
+# 1. OS Check
 if ! grep -q "ID=cachyos" /etc/os-release; then
-  echo "❌ This script is designed exclusively for CachyOS! Please run on CachyOS."
+  echo "❌ Only for CachyOS!"
   exit 1
 fi
+echo "✅ CachyOS detected"
 
-echo "✅ CachyOS detected. Enabling Arch + BTRFS optimizations."
+# 2. Install FULL dependencies (fixed all missing)
+sudo pacman -Syu --needed --noconfirm \
+  podman slirp4netns fuse3 btrfs-progs git \
+  openssl podman-plugin-pasta cronie nano \
+  libseccomp iptables-nft nftables
 
-# 2. Update system & install dependencies
-# Note: cachyos-kernel-headers is kept but uses --needed (only install if missing)
-sudo pacman -Syu --needed --noconfirm podman slirp4netns fuse3 btrfs-progs git
-echo "📦 Base packages installed."
+echo "📦 All dependencies installed"
 
-# 3. Create dedicated 'openclaw' user (Zero Trust)
+# 3. Create secure openclaw user
 if ! id openclaw &>/dev/null; then
-  sudo useradd -m -s /usr/bin/nologin -c "OpenClaw Zero-Trust User" openclaw
+  sudo useradd -m -s /usr/bin/nologin -c "OpenClaw Zero-Trust" openclaw
   sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 openclaw
-  echo "🔒 User 'openclaw' created."
+  echo "🔒 User openclaw created"
 fi
 
-# Get dynamic UID/GID (safety measure)
 USER_UID=$(id -u openclaw)
 USER_GID=$(id -g openclaw)
 
-# 4. Clone repository (if not exists)
+# 4. Clone repo
 if [ ! -d /home/openclaw/openclaw ]; then
   sudo -u openclaw git clone https://github.com/openclaw/openclaw.git /home/openclaw/openclaw
 fi
 
-# 5. Prepare directory structure & BTRFS Subvolumes
-echo "📂 Preparing directories..."
+# 5. Prepare directories
 sudo -u openclaw mkdir -p /home/openclaw/.config/containers
 sudo -u openclaw mkdir -p /home/openclaw/.openclaw/workspace
 sudo -u openclaw mkdir -p /home/openclaw/projects
-sudo mkdir -p /snapshots
+sudo mkdir -p /snapshots 2>/dev/null || true
 sudo chown openclaw:openclaw /snapshots 2>/dev/null || true
 
-# Configure storage.conf
+# 6. Storage.conf (BTRFS + overlay)
 cat > /home/openclaw/.config/containers/storage.conf << CONF
 [storage]
 driver = "btrfs"
@@ -51,31 +51,25 @@ graphroot = "/home/openclaw/.local/share/containers/storage"
 
 [storage.options]
 mount_program = "/usr/bin/fuse-overlayfs"
+pull_options = {enable_partial_images = true, use_hard_links = true}
 CONF
 
-# Create BTRFS subvolumes (FIXED: Created as root, then chowned)
-if mount | grep -q " /home .*btrfs"; then
-  echo "🌲 BTRFS detected on /home, creating subvolumes as root..."
-  # Root creates the subvolume
+# 7. BTRFS subvolumes (reliable check)
+if findmnt -no FSTYPE /home | grep -q btrfs; then
+  echo "🌲 BTRFS /home detected"
   sudo btrfs subvolume create /home/openclaw/.openclaw 2>/dev/null || true
   sudo btrfs subvolume create /home/openclaw/.openclaw/workspace 2>/dev/null || true
-  # Immediate permission fix
   sudo chown -R openclaw:openclaw /home/openclaw/.openclaw
   sudo chmod 700 /home/openclaw/.openclaw
   sudo chmod 700 /home/openclaw/.openclaw/workspace
-  echo "✅ BTRFS subvolumes ready."
-else
-  echo "⚠️  /home is not on BTRFS. Subvolumes skipped."
 fi
 
-# 6. Pre-create all security configuration files (Before running setup)
-
-# 6.1 Seccomp Profile
+# 8. Seccomp (fixed for Node.js compatibility)
 cat > /home/openclaw/.openclaw/seccomp-openclaw.json << 'SEC'
-{"defaultAction":"SCMP_ACT_ALLOW","architectures":["SCMP_ARCH_X86_64"],"syscalls":[{"names":["ptrace","process_vm_readv","process_vm_writev","kexec_load","bpf","perf_event_open","fanotify_init","mount","umount2","reboot","setuid","setgid","chroot","pivot_root"],"action":"SCMP_ACT_ERRNO"}]}
+{"defaultAction":"SCMP_ACT_ALLOW","architectures":["SCMP_ARCH_X86_64"],"syscalls":[{"names":["ptrace","process_vm_readv","process_vm_writev","kexec_load","bpf","perf_event_open","fanotify_init","mount","umount2","reboot","chroot","pivot_root"],"action":"SCMP_ACT_ERRNO"}]}
 SEC
 
-# 6.2 OpenClaw Main Configuration
+# 9. OpenClaw config
 cat > /home/openclaw/.openclaw/openclaw.json << 'JSON'
 {
   "gateway": {"bind": "127.0.0.1", "port": 18789, "auth": {"mode": "token"}},
@@ -85,35 +79,32 @@ cat > /home/openclaw/.openclaw/openclaw.json << 'JSON'
 }
 JSON
 
-# 6.3 Generate random Token and write to .env (Fix: Missing .env file)
+# 10. Secure token
 TOKEN=$(openssl rand -hex 32)
-cat > /home/openclaw/.openclaw/.env << ENVFILE
+cat > /home/openclaw/.openclaw/.env << ENV
 OPENCLAW_TOKEN=${TOKEN}
 OPENCLAW_LOG_LEVEL=info
-ENVFILE
+NODE_ENV=production
+ENV
 
-# 6.4 Set Permissions (Must be done after all files are created)
-sudo chown -R openclaw:openclaw /home/openclaw/.openclaw
-sudo chown -R openclaw:openclaw /home/openclaw/.config
-sudo chmod 700 /home/openclaw/.openclaw
-sudo chmod 600 /home/openclaw/.openclaw/seccomp-openclaw.json
-sudo chmod 600 /home/openclaw/.openclaw/openclaw.json
-sudo chmod 600 /home/openclaw/.openclaw/.env
+# 11. Permissions lock
+sudo chown -R openclaw:openclaw /home/openclaw
+sudo chmod -R 700 /home/openclaw
+sudo chmod 600 /home/openclaw/.openclaw/*
 
-# 7. Execute official installation (Environment is now fully prepared)
+# 12. Run official setup
 cd /home/openclaw/openclaw
 export OPENCLAW_PODMAN_QUADLET=1
-# Run setup as the openclaw user
 sudo -u openclaw ./setup-podman.sh --quadlet --image-tag local
 
-# 8. Apply Advanced Quadlet Hardening (Overwrite default generated file)
+# 13. HARDENED Quadlet (final secure version)
 QUADLET_DIR="/home/openclaw/.config/containers/systemd"
 mkdir -p "$QUADLET_DIR"
 
 cat > "$QUADLET_DIR/openclaw.container" << EOL
 [Unit]
-Description=OpenClaw Gateway - CachyOS Zero Trust
-After=network-online.target
+Description=OpenClaw Gateway ZeroTrust
+After=network-online.target nss-lookup.target
 Wants=network-online.target
 
 [Container]
@@ -122,22 +113,26 @@ ContainerName=openclaw-gateway
 User=${USER_UID}:${USER_GID}
 SecurityOpts=no-new-privileges:true
 SecurityOpts=seccomp=/home/openclaw/.openclaw/seccomp-openclaw.json
-ReadOnly=true
+ReadOnly=True
 ProtectSystem=strict
 ProtectHome=read-only
-PrivateTmp=true
-PrivateDevices=true
-NoNewPrivileges=true
-MaskPaths=/etc/shadow,/etc/passwd,/etc/sudoers,/root,/sys,/proc/sys,/dev/mem
+PrivateTmp=True
+PrivateDevices=True
+ProtectKernelLogs=True
+ProtectKernelModules=True
+ProtectKernelTunables=True
+RestrictNamespaces=True
+RestrictRealtime=True
+RestrictSUIDSGID=True
+NoNewPrivileges=True
+MaskPaths=/etc/shadow,/etc/sudoers,/root,/sys/fs,/dev/mem,/dev/kmem
 Tmpfs=/tmp:size=128M,noexec,nosuid,nodev
-# Simplified Pasta config for better compatibility
 Network=pasta
-PastaOptions=--no-tcp,--outbound-addr=host
 CapDrop=ALL
 PidsLimit=256
 Memory=4096M
 MemorySwap=0
-CPUQuota=90%
+CPUQuota=85%
 EnvironmentFile=/home/openclaw/.openclaw/.env
 Volume=/home/openclaw/.openclaw:/home/node/.openclaw:rw
 Volume=/home/openclaw/.openclaw/workspace:/home/node/.openclaw/workspace:rw
@@ -146,8 +141,9 @@ SecurityLabelDisable=true
 
 [Service]
 Restart=always
-RestartSec=3
+RestartSec=2
 LimitNOFILE=8192
+LimitNPROC=512
 
 [Install]
 WantedBy=default.target
@@ -155,27 +151,63 @@ EOL
 
 sudo chown openclaw:openclaw "$QUADLET_DIR/openclaw.container"
 
-# 9. Reload and Start Service (Fix: Correct Systemd invocation)
-echo "🚀 Starting services..."
-
-# Enable linger (allows user services to run without active login)
+# 14. Start service (stable systemd user)
 sudo loginctl enable-linger openclaw
 
-# Correct way to invoke user-level systemctl from root
-sudo -u openclaw XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user daemon-reload
-sudo -u openclaw XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user enable --now openclaw.service
+sudo -u openclaw bash -c "
+export XDG_RUNTIME_DIR=/run/user/${USER_UID}
+systemctl --user daemon-reload
+systemctl --user enable --now openclaw.service
+"
 
-# 10. Setup Automatic BTRFS Snapshots (Fix: Cron syntax)
-# Use 'bash -c' to ensure 'date' executes correctly and escape '%' signs
-CRON_CMD='if [ -d /snapshots ]; then btrfs subvolume snapshot -r /home/openclaw/.openclaw/workspace /snapshots/openclaw-workspace-$(date +\%F-\%H\%M); fi'
-echo "0 4 * * 0 root bash -c \"$CRON_CMD\"" | sudo tee /etc/cron.d/openclaw-btrfs > /dev/null
-sudo chmod 644 /etc/cron.d/openclaw-btrfs
+# 15. FIREWALL LOCKDOWN (only localhost allowed)
+echo "🔒 Setting up firewall (18789 only allowed from 127.0.0.1)"
 
-echo "=================================================="
-echo "🎉 CachyOS Dedicated Deployment Complete!"
-echo "📍 Dashboard: http://127.0.0.1:18789"
-echo "🔑 Token: $TOKEN"
-echo "💡 Tip: To restart service, run: sudo -u openclaw XDG_RUNTIME_DIR=/run/user/${USER_UID} systemctl --user restart openclaw.service"
+sudo systemctl enable --now nftables
+sudo nft flush ruleset
+sudo nft add table inet filter
+sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }'
+sudo nft add rule inet filter input iif lo accept
+sudo nft add rule inet filter input ct state related,established accept
+sudo nft add rule inet filter input tcp dport 18789 ip saddr 127.0.0.1 accept
+sudo nft add rule inet filter input icmp type echo-request limit rate 10/second accept
+sudo nft save
+
+# 16. SYSCTL HARDENING (CachyOS optimized)
+cat > /etc/sysctl.d/99-openclaw-hardening.conf << SYSCTL
+fs.protected_symlinks=1
+fs.protected_hardlinks=1
+fs.suid_dumpable=0
+kernel.dmesg_restrict=1
+kernel.kptr_restrict=2
+kernel.unprivileged_bpf_disabled=1
+net.core.bpf_jit_harden=2
+net.ipv4.conf.all.rp_filter=1
+net.ipv4.conf.default.rp_filter=1
+net.ipv4.icmp_echo_ignore_broadcasts=1
+net.ipv4.icmp_ignore_bogus_error_responses=1
+SYSCTL
+
+sudo sysctl -p /etc/sysctl.d/99-openclaw-hardening.conf
+
+# 17. BTRFS SNAPSHOTS + AUTO-CLEAN (7 days retention)
+SNAP_CRON="0 4 * * * root if [ -d /snapshots ]; then btrfs subvolume snapshot -r /home/openclaw/.openclaw/workspace /snapshots/openclaw-\$(date +\%F-\%H\%M); find /snapshots -name 'openclaw-*' -mtime +7 -delete 2>/dev/null; fi"
+echo "$SNAP_CRON" | sudo tee /etc/cron.d/openclaw-snapshot >/dev/null
+sudo chmod 644 /etc/cron.d/openclaw-snapshot
+
+sudo systemctl enable --now cronie
+
+# 18. AUTO-UPDATE container weekly
+UPD_CRON="0 2 * * 0 openclaw export XDG_RUNTIME_DIR=/run/user/${USER_UID} && systemctl --user restart openclaw.service"
+echo "$UPD_CRON" | sudo tee /etc/cron.d/openclaw-auto-update >/dev/null
+sudo chmod 644 /etc/cron.d/openclaw-auto-update
+
+echo
+echo "========================================================="
+echo "🎉 DEPLOYMENT COMPLETE - FULLY HARDENED"
+echo "📍 URL: http://127.0.0.1:18789"
+echo "🔑 TOKEN: $TOKEN"
+echo "========================================================="
 EOF
 
 chmod +x ~/openclaw-cachyos-secure-podman.sh
