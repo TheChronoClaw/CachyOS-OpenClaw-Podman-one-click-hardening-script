@@ -1,157 +1,161 @@
 #!/bin/bash
-# ================================================
-# OpenClaw Day 12 - CachyOS BTRFS + Snapper One-Click Production Snapshot Script (EN)
-# Author: TheChronoClaw 
-# Function: Auto-install & configure Snapper + snap-pac + bootloader support
-# Designed for: OpenClaw + Podman rootless/Production Environment
-# Version: 1.7 (FIXED: Robust GRUB Preload Module Logic + Optimized Container Detection)
-# ================================================
+# ==============================================================================
+# Btrfs + Snapper Auto Setup Script (Fixed Enhanced)
+# For: CachyOS / Arch Linux
+# Function: Auto-detect root partition, create subvolumes, configure Snapper, enable services
+# Version: 1.2.0-Fix
+# Author: TheChronoClaw (Modified & Fixed by Assistant)
+# ==============================================================================
 
-set -e
+set -euo pipefail
 
-# Define Colors
+# Color definitions
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-# --- CORRECTED ECHO STATEMENTS ---
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}=== OpenClaw Day 12: BTRFS + Snapper Production Setup ===${NC}"
-echo -e "${GREEN}================================================${NC}"
-echo "Starting professional snapshot system configuration for your CachyOS..."
+check_root() {
+    if [ "$UID" -ne 0 ]; then
+        echo -e "${RED}ERROR: Please run as root (sudo $0)${NC}"
+        exit 1
+    fi
+}
 
-# 1. Check Root Privileges
-if [[ $EUID -ne 0 ]]; then
-   echo -e "${RED}Error: Please run this script with sudo (sudo ./script.sh)${NC}"
-   exit 1
+check_root
+
+echo -e "\n${GREEN}=============================================${NC}"
+echo -e "${GREEN} Btrfs + Snapper Automatic Setup Script ${NC}"
+echo -e "${GREEN}=============================================${NC}\n"
+
+# ------------------------------------------------------------------------------
+# 1. Install dependencies
+# ------------------------------------------------------------------------------
+echo "[1/6] Checking and installing required tools..."
+if ! command -v snapper &> /dev/null; then
+    # Remove pacman lock if exists
+    if [ -f /var/lib/pacman/db.lck ]; then
+        echo -e "${YELLOW}WARNING: Pacman lock found, attempting to remove...${NC}"
+        rm -f /var/lib/pacman/db.lck
+    fi
+    pacman -Syu --needed --noconfirm snapper btrfs-progs inotify-tools
+else
+    echo "✅ snapper is already installed, skipping."
 fi
 
-# 2. Check if Root is BTRFS
-if ! findmnt -n -o FSTYPE / | grep -q btrfs; then
-  echo -e "${RED}Error: Root partition (/) is NOT a BTRFS filesystem!${NC}"
-  echo "Current filesystem: $(findmnt -n -o FSTYPE /)"
-  echo -e "${YELLOW}Hint: Please select BTRFS during CachyOS installation.${NC}"
+# ------------------------------------------------------------------------------
+# 2. Check if root filesystem is Btrfs
+# ------------------------------------------------------------------------------
+echo -e "\n[2/6] Detecting root filesystem type..."
+ROOT_DEV=$(findmnt / -o SOURCE -n)
+ROOT_FS=$(findmnt / -o FSTYPE -n)
+
+if [ "$ROOT_FS" != "btrfs" ]; then
+  echo -e "${RED}ERROR: Root filesystem ($ROOT_FS) is not Btrfs, aborting.${NC}"
   exit 1
 fi
 
-# 3. Install packages FIRST
-echo -e "\n${YELLOW}→ [1/6] Installing required packages (no full upgrade yet)...${NC}"
-pacman -Sy --needed --noconfirm snapper snap-pac grub-btrfs btrfs-progs btrfs-assistant
+echo -e "✅ Root device detected: ${GREEN}$ROOT_DEV${NC}"
 
-echo -e "\n${YELLOW}→ [2/6] Configuring Snapper for root...${NC}"
+# ------------------------------------------------------------------------------
+# 3. Create standard .snapshots subvolume
+# ------------------------------------------------------------------------------
+echo -e "\n[3/6] Creating .snapshots subvolume..."
+MOUNT_POINT_TMP="/mnt/btrfs-root-tmp"
+mkdir -p "$MOUNT_POINT_TMP"
 
-# Backup old config if exists
-if [[ -f /etc/snapper/configs/root ]]; then
-  cp /etc/snapper/configs/root /etc/snapper/configs/root.bak.$(date +%s)
-  echo -e "${BLUE}ℹ️  Old config backed up.${NC}"
+# Prevent duplicate mount
+if mountpoint -q "$MOUNT_POINT_TMP"; then
+    umount "$MOUNT_POINT_TMP"
 fi
 
-# Create config if missing
-if [[ ! -f /etc/snapper/configs/root ]]; then
-  echo "Creating root Snapper configuration..."
-  snapper -c root create-config /
-fi
+mount -o subvolid=5 "$ROOT_DEV" "$MOUNT_POINT_TMP"
 
-# Optimized Production Config
-echo -e "${YELLOW}→ [3/6] Writing optimized Snapper parameters...${NC}"
-cat > /etc/snapper/configs/root << 'EOF'
-# OpenClaw Production Optimized Config - Day 12 v1.7
-SUBVOLUME="/"
-FSTYPE="btrfs"
-ALLOW_USERS=""
-ALLOW_GROUPS="wheel"
-SYNC_ACL="yes"
-BACKGROUND_COMPARISON="yes"
-QGROUP="1/0"
-
-# Number Cleanup
-NUMBER_CLEANUP="yes"
-NUMBER_MIN_AGE="1800"
-NUMBER_LIMIT="10"
-NUMBER_LIMIT_IMPORTANT="15"
-
-# Timeline Snapshots
-TIMELINE_CREATE="yes"
-TIMELINE_CLEANUP="yes"
-TIMELINE_MIN_AGE="1800"
-TIMELINE_LIMIT_HOURLY="6"
-TIMELINE_LIMIT_DAILY="7"
-TIMELINE_LIMIT_WEEKLY="4"
-TIMELINE_LIMIT_MONTHLY="3"
-TIMELINE_LIMIT_YEARLY="0"
-
-# Space Management
-SPACE_LIMIT="0.6"
-FREE_LIMIT="0.2"
-EOF
-chmod 750 /.snapshots
-chown root:root /.snapshots
-
-# 4. Container Environment Hint
-echo -e "\n${YELLOW}→ [4/6] Checking container environment...${NC}"
-if [[ -d /var/lib/containers ]]; then
-  echo -e "${BLUE}ℹ️  Detected rootful Podman/Docker environment. Data protected.${NC}"
+# Check if subvolume already exists
+if btrfs subvolume show "$MOUNT_POINT_TMP/.snapshots" &>/dev/null; then
+    echo "⚠️  Subvolume .snapshots already exists, skipping."
 else
-  echo -e "${BLUE}ℹ️  No rootful container directory detected. Ensure rootless containers ${NC}"
-  echo -e "${BLUE}are managed separately for optimal safety.${NC}"
+    btrfs subvolume create "$MOUNT_POINT_TMP/.snapshots"
+    echo "✅ Subvolume .snapshots created successfully."
 fi
 
-echo -e "\n${YELLOW}→ [5/6] Enabling Snapper systemd timers...${NC}"
-systemctl enable --now snapper-timeline.timer snapper-cleanup.timer snapper-boot.timer 2>/dev/null || true
+umount "$MOUNT_POINT_TMP"
+rmdir "$MOUNT_POINT_TMP"
 
-# 5. Bootloader Configuration (GRUB or Limine)
-echo -e "\n${YELLOW}→ [6/6] Configuring bootloader for snapshot booting...${NC}"
+# ------------------------------------------------------------------------------
+# 4. Configure /etc/fstab for /.snapshots
+# ------------------------------------------------------------------------------
+echo -e "\n[4/6] Configuring /etc/fstab for /.snapshots..."
+TARGET_DIR="/.snapshots"
 
-if [ -f /boot/grub/grub.cfg ]; then
-    echo "Detected GRUB bootloader..."
+if [ ! -d "$TARGET_DIR" ]; then
+    mkdir -p "$TARGET_DIR"
+fi
 
-    #  GRUB_PRELOAD_MODULES
-    echo "Ensuring Btrfs module is preloaded in GRUB..."
-    if grep -q "GRUB_PRELOAD_MODULES" /etc/default/grub; then
-        
-        sed -i 's/^GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES="btrfs"/' /etc/default/grub
-    else
-        
-        echo 'GRUB_PRELOAD_MODULES="btrfs"' >> /etc/default/grub
-    fi
+chmod 0750 "$TARGET_DIR"
+chown root:root "$TARGET_DIR"
 
-    echo "Updating GRUB configuration..."
-    grub-mkconfig -o /boot/grub/grub.cfg
+UUID=$(blkid -s UUID -o value "$ROOT_DEV")
 
-    # Enable grub-btrfsd
-    if systemctl list-unit-files | grep -q grub-btrfsd; then
-        systemctl enable --now grub-btrfsd.service 2>/dev/null || true
-        echo -e "${GREEN}✔️  GRUB + grub-btrfsd ready. New snapshots auto-appear in boot menu.${NC}"
-    fi
+# Backup fstab
+cp /etc/fstab /etc/fstab.bak.$(date +%s)
 
-elif [ -f /boot/limine/limine.cfg ]; then
-    echo -e "${BLUE}ℹ️  Detected Limine (CachyOS default).${NC}"
-    echo -e "${YELLOW}Action: Use btrfs-assistant GUI to add snapshot boot entries.${NC}"
-    echo -e "${GREEN}✔️  Snapper core ready. Limine manual management recommended.${NC}"
+# Remove old entries
+sed -i '/\/\.snapshots.*btrfs/d' /etc/fstab
+
+# Add new mount entry
+echo "UUID=$UUID $TARGET_DIR btrfs rw,relatime,subvol=/.snapshots 0 0" >> /etc/fstab
+
+# Mount immediately
+if mountpoint -q "$TARGET_DIR"; then
+    umount "$TARGET_DIR"
+fi
+mount "$TARGET_DIR"
+
+if mountpoint -q "$TARGET_DIR"; then
+    echo "✅ /.snapshots mounted successfully."
 else
-    echo -e "${RED}⚠️  Unknown bootloader detected. Use btrfs-assistant for snapshot support.${NC}"
+    echo -e "${RED}ERROR: Failed to mount /.snapshots${NC}"
+    exit 1
 fi
 
-# Create initial snapshot
-echo -e "\n${YELLOW}→ Creating initial manual snapshot...${NC}"
-snapper -c root create --description "Before Day 12 Snapper Setup - OpenClaw Production" --cleanup-algorithm number
+# ------------------------------------------------------------------------------
+# 5. Configure Snapper
+# ------------------------------------------------------------------------------
+echo -e "\n[5/6] Initializing Snapper configuration..."
+CONFIG_NAME="root"
 
-echo -e "\n${GREEN}================================================${NC}"
-echo -e "${GREEN}✅ Snapper Production Setup COMPLETE! (v1.7)${NC}"
-echo -e "${GREEN}================================================${NC}"
+# Remove existing config if present
+if snapper -c "$CONFIG_NAME" list-config &>/dev/null; then
+    echo "⚠️  Existing config '$CONFIG_NAME' found, recreating..."
+    snapper -c "$CONFIG_NAME" delete-config || true
+fi
 
-echo -e "\n${YELLOW}📚 Quick Commands:${NC}"
-echo "   List snapshots:           sudo snapper -c root list"
-echo "   Create manual:            sudo snapper -c root create --description 'Note'"
-echo "   Rollback:                 sudo snapper -c root rollback <ID>"
-echo "   GUI:                      btrfs-assistant"
+# Create config for /
+snapper -c "$CONFIG_NAME" create-config /
 
-echo -e "\n${GREEN}🚑 Rescue (if system breaks):${NC}"
-echo "   1. Reboot → choose snapshot in GRUB/Limine menu"
-echo "   2. sudo snapper -c root rollback <good_ID>"
-echo "   3. Reboot"
+# Verify and fix config
+CONF_FILE="/etc/snapper/configs/$CONFIG_NAME"
+if [ -f "$CONF_FILE" ]; then
+    sed -i 's|^SUBVOLUME=.*|SUBVOLUME=/|' "$CONF_FILE"
+    echo "✅ Snapper configuration updated."
+else
+    echo -e "${RED}ERROR: Configuration file not generated${NC}"
+    exit 1
+fi
 
-echo -e "\n${BLUE}💡 Next: Now safely run 'sudo pacman -Syu' to test pre/post snapshots!${NC}"
-echo -e "Reply 🦞 in the thread and I'll send you Day 13 (Quadlet auto-service) script!"
+# ------------------------------------------------------------------------------
+# 6. Enable and start services
+# ------------------------------------------------------------------------------
+echo -e "\n[6/6] Starting Snapper services..."
+
+systemctl daemon-reload
+systemctl enable --now snapperd.service
+systemctl enable --now snapper-timeline.timer
+systemctl enable --now snapper-cleanup.timer
+
+echo -e "\n${GREEN}=============================================${NC}"
+echo -e "${GREEN}✅ Btrfs + Snapper setup completed!${NC}"
+echo -e "📌 Test: snapper list"
+echo -e "📌 Create snapshot: snapper -c root create --description \"test\""
+echo -e "${GREEN}=============================================${NC}\n"
