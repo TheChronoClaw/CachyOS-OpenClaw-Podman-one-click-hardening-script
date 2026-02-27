@@ -1,1 +1,194 @@
 
+OpenClaw 测试环境清理脚本说明文档
+ 
+版本
+ 
+1.0.0
+ 
+作者
+ 
+TheChronoClaw
+ 
+适配环境
+ 
+CachyOS + Podman 无根模式（rootless）
+ 
+核心功能
+ 
+安全停止并移除 OpenClaw 相关的容器、镜像，清理配置目录，修剪 Podman 无用数据，实现测试环境的一键重置。
+ 
+ 
+ 
+一、脚本作用
+ 
+该脚本为 OpenClaw 专属的测试环境清理工具，执行后会彻底清理测试过程中生成的所有 OpenClaw 相关资源，无残留且操作安全，避免手动清理遗漏或误删系统文件，适用于测试完成后快速重置环境、重新部署的场景。
+ 
+二、执行流程
+ 
+脚本共分 5 个步骤，全程自动化执行，无交互操作，所有步骤执行失败均不会中断脚本，且静默处理无冗余报错。
+ 
+1. 停止容器：检测并停止名为  openclaw  的运行中容器
+2. 删除容器：强制删除  openclaw  容器，无论容器是否处于运行状态
+3. 删除镜像：筛选所有含  openclaw  关键词的镜像并强制删除
+4. 清理配置：删除本地相关的 OpenClaw 配置目录，仅当目录存在时执行删除
+5. 修剪数据：一键修剪 Podman 的无用数据（包括未使用的镜像、容器、卷、网络等）
+ 
+三、清理范围
+ 
+清理类型 具体内容 
+容器 强制删除名为  openclaw  的 Podman 容器 
+镜像 所有名称/标签含  openclaw  的 Podman 镜像 
+配置目录 ~/.config/openclaw、当前目录下的 config/、openclaw/ 
+Podman 冗余数据 未使用的镜像、容器、卷、网络、构建缓存等 
+ 
+四、使用方法
+ 
+1. 获取脚本
+ 
+bash
+  
+git clone https://github.com/TheChronoClaw/CachyOS-OpenClaw-Podman-one-click-hardening-script.git
+cd CachyOS-OpenClaw-Podman-one-click-hardening-script
+ 
+ 
+2. 赋予执行权限
+ 
+bash
+  
+chmod +x Starting-OpenClaw-test-environment-cleanup.sh
+ 
+ 
+3. 运行脚本
+ 
+无需 sudo 权限，直接执行即可（适配 Podman 无根模式）：
+ 
+bash
+  
+./Starting-OpenClaw-test-environment-cleanup.sh
+ 
+ 
+五、执行结果
+ 
+脚本执行完成后，终端会输出明确的成功提示：
+ 
+plaintext
+  
+✅ Cleanup completed successfully!
+All OpenClaw test environment resources have been removed.
+ 
+ 
+六、注意事项
+ 
+1. 脚本仅适用于测试环境，生产环境请勿运行，避免误删业务相关资源；
+2. 执行脚本无需 sudo 权限，与 Podman 无根模式的安全设计保持一致；
+3. 配置目录清理仅针对固定路径，不会扫描或删除系统其他目录的文件，操作安全；
+4.  podman system prune -f  会清理 Podman 所有无用数据，不仅限于 OpenClaw 相关，若需保留其他 Podman 无用资源，可注释脚本中该步骤；
+5. 脚本已做存在性判断，若待清理的容器、镜像、目录不存在，会直接跳过，无报错信息。
+ 
+七、核心命令说明
+ 
+脚本命令 作用说明 
+`podman stop openclaw 2>/dev/null  
+ podman rm -f openclaw  强制删除容器，忽略容器状态 
+`podman images grep -i openclaw 
+ [ -d 目录路径 ] && rm -rf 目录路径  仅当目录存在时执行删除，避免路径不存在报错 
+ podman system prune -f  无交互修剪 Podman 所有无用数据，一键清理冗余资源 
+ 
+ 
+ 
+ 
+ 
+OpenClaw Test Environment Cleanup Script Documentation
+ 
+Version
+ 
+1.0.0
+ 
+Author
+ 
+TheChronoClaw
+ 
+Compatibility
+ 
+CachyOS + Podman rootless
+ 
+Core Function
+ 
+Safely stop and remove OpenClaw-related containers and images, clean up configuration directories, prune unused Podman data, and realize one-click reset of the test environment.
+ 
+ 
+ 
+1. Script Function
+ 
+This script is an exclusive test environment cleanup tool for OpenClaw. After execution, it will completely clean up all OpenClaw-related resources generated during the test process with no residue and safe operation. It avoids omissions in manual cleanup or accidental deletion of system files, and is suitable for quickly resetting the environment and redeploying after the test is completed.
+ 
+2. Execution Flow
+ 
+The script consists of 5 steps, all executed automatically without interactive operations. All step execution failures will not interrupt the script, and silent processing is performed without redundant errors.
+ 
+1. Stop Container: Detect and stop the running container named  openclaw 
+2. Delete Container: Force delete the  openclaw  container regardless of its running status
+3. Delete Image: Filter all images containing the  openclaw  keyword and force delete them
+4. Cleanup Config: Delete local relevant OpenClaw configuration directories, only execute deletion when the directory exists
+5. Prune Data: One-click prune unused Podman data (including unused images, containers, volumes, networks, etc.)
+ 
+3. Cleanup Scope
+ 
+Cleanup Type Specific Content 
+Container Force delete the Podman container named  openclaw  
+Image All Podman images with  openclaw  in name/tag 
+Config Directory ~/.config/openclaw, config/ and openclaw/ in the current directory 
+Podman Redundant Data Unused images, containers, volumes, networks, build cache, etc. 
+ 
+4. Usage
+ 
+4.1 Get the Script
+ 
+bash
+  
+git clone https://github.com/TheChronoClaw/CachyOS-OpenClaw-Podman-one-click-hardening-script.git
+cd CachyOS-OpenClaw-Podman-one-click-hardening-script
+ 
+ 
+4.2 Grant Execution Permission
+ 
+bash
+  
+chmod +x Starting-OpenClaw-test-environment-cleanup.sh
+ 
+ 
+4.3 Run the Script
+ 
+No sudo privileges required, execute directly (compatible with Podman rootless mode):
+ 
+bash
+  
+./Starting-OpenClaw-test-environment-cleanup.sh
+ 
+ 
+5. Execution Result
+ 
+After the script is executed, the terminal will output a clear success prompt:
+ 
+plaintext
+  
+✅ Cleanup completed successfully!
+All OpenClaw test environment resources have been removed.
+ 
+ 
+6. Notes
+ 
+1. This script is only for test environments, do not run it in production environments to avoid accidental deletion of business-related resources;
+2. No sudo privileges are required to execute the script, which is consistent with the security design of Podman rootless mode;
+3. Configuration directory cleanup is only for fixed paths, and will not scan or delete files in other directories of the system, with safe operation;
+4.  podman system prune -f  will clean up all unused Podman data, not limited to OpenClaw-related. If you need to keep other unused Podman resources, you can comment out this step in the script;
+5. The script has added existence judgment. If the container, image or directory to be cleaned does not exist, it will be skipped directly without error information.
+ 
+7. Core Command Explanation
+ 
+Script Command Function Explanation 
+`podman stop openclaw 2>/dev/null  
+ podman rm -f openclaw  Force delete the container, ignore the container status 
+`podman images grep -i openclaw 
+ [ -d directory path ] && rm -rf directory path  Delete only if the directory exists, avoid errors when the path does not exist 
+ podman system prune -f  Prune all unused Podman data without interaction, one-click cleanup of redundant resources
