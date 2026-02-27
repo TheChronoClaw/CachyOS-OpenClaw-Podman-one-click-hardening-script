@@ -1,0 +1,18 @@
+# Btrfs + Snapper One-Click Setup Script
+Automated setup script for Btrfs + Snapper on **Arch Linux / CachyOS**.
+
+## Features
+- Auto-detect root filesystem and verify it is Btrfs
+- Auto-create and mount the standard `.snapshots` subvolume
+- Safely configure `/etc/fstab` with backup
+- Auto-setup Snapper for `/` (root)
+- Enable timeline and cleanup services
+- Warning for non-top-level subvolume layouts
+- Safe rollback on mount failure
+
+## Usage
+```bash
+git clone https://github.com/TheChronoClaw/CachyOS-OpenClaw-Podman-one-click-hardening-script.git
+cd CachyOS-OpenClaw-Podman-one-click-hardening-script
+chmod +x setup-btrfs-snapper.sh
+sudo ./setup-btrfs-snapper.sh
