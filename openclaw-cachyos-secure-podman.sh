@@ -35,25 +35,37 @@ if [ ! -d /home/openclaw/openclaw ]; then
 fi
 
 # 5. Prepare directory structure & BTRFS Subvolumes
+echo "📂 Preparing directories..."
 sudo -u openclaw mkdir -p /home/openclaw/.config/containers
 sudo -u openclaw mkdir -p /home/openclaw/.openclaw/workspace
 sudo -u openclaw mkdir -p /home/openclaw/projects
-sudo mkdir -p /snapshots # Fix: Ensure snapshot directory exists
+sudo mkdir -p /snapshots
+sudo chown openclaw:openclaw /snapshots 2>/dev/null || true
 
-# Configure storage.conf for BTRFS
+# Configure storage.conf
 cat > /home/openclaw/.config/containers/storage.conf << CONF
 [storage]
 driver = "btrfs"
 runroot = "/run/user/${USER_UID}/containers"
 graphroot = "/home/openclaw/.local/share/containers/storage"
+
+[storage.options]
+mount_program = "/usr/bin/fuse-overlayfs"
 CONF
 
-# Create BTRFS subvolumes (if /home is on btrfs)
+# Create BTRFS subvolumes (FIXED: Created as root, then chowned)
 if mount | grep -q " /home .*btrfs"; then
-  # Ignore errors if subvolumes already exist
+  echo "🌲 BTRFS detected on /home, creating subvolumes as root..."
+  # Root creates the subvolume
   sudo btrfs subvolume create /home/openclaw/.openclaw 2>/dev/null || true
   sudo btrfs subvolume create /home/openclaw/.openclaw/workspace 2>/dev/null || true
-  echo "🌲 BTRFS subvolumes ready."
+  # Immediate permission fix
+  sudo chown -R openclaw:openclaw /home/openclaw/.openclaw
+  sudo chmod 700 /home/openclaw/.openclaw
+  sudo chmod 700 /home/openclaw/.openclaw/workspace
+  echo "✅ BTRFS subvolumes ready."
+else
+  echo "⚠️  /home is not on BTRFS. Subvolumes skipped."
 fi
 
 # 6. Pre-create all security configuration files (Before running setup)
