@@ -1,7 +1,6 @@
 #!/bin/bash
 # ================================================
-# OpenClaw Day 12 - Ollama Local Model One-Click Setup (EN)
-# Author: TheChronoClaw 
+# @TheChronoClaw
 # Function: Install Ollama + GPU + models + OpenClaw config (Podman rootless safe)
 # Designed for: CachyOS + Podman rootless + NVIDIA
 # Version: 1.7 (Ultimate - VRAM Check + Smart Wait + Model Selection)
